@@ -1,4 +1,4 @@
-<!-- # rxLiveGQL #
+# rxLiveGQL #
 
 [![Platform](https://img.shields.io/badge/platform-Java-brightgreen.svg?style=flat)](https://www.java.com/en/)
 [![Technology](https://img.shields.io/badge/technology-GraphQL-blue.svg?style=flat)](https://graphql.org/)
@@ -47,7 +47,7 @@ Just copy the `rx-livegql-1.0.jar` inside your libs folder and be sure to use:
 dependency {
   compile fileTree(dir: 'libs', include: ['*.jar'])
 }
-``` -->
+```
 
 ## How to use ##
 
