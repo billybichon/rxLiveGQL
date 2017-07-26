@@ -1,15 +1,25 @@
-group 'com.github.billybichon'
-version '1.0-SNAPSHOT'
-
-sourceCompatibility = 1.8
-
-allProjects {
+buildscript {
     repositories {
-        mavenCentral()
+        jcenter()
+    }
+}
+
+plugins {
+    id "com.jfrog.bintray" version "1.7"
+}
+
+group 'com.github.billybichon'
+version '1.0'
+
+allprojects {
+    repositories {
+        jcenter()
     }
     apply plugin: "maven"
     apply plugin: "maven-publish"
     apply plugin: "java"
+
+    sourceCompatibility = 1.8
 }
 
 dependencies {
@@ -36,7 +46,65 @@ artifacts {
 publishing {
     publications {
         MyPublication(MavenPublication) {
-            
+            from components.java
+            artifact sourcesJar
+            artifact javadocJar
+
+            groupId "com.github.billybichon"
+            artifactId "rx-livegql"
+            version "1.0"
+
+            pom.withXml {
+                asNode().appendNode("name", "com.github.billybichon:rx-livegql")
+                asNode().appendNode("description", "ReactiveX java library in order to use GraphQL Subscription with RxJava2 on WebSocket based on Apollo Protocol.")
+                asNode().appendNode("url", "https://github.com/billybichon/rxLiveGQL")
+                def licenses = asNode().appendNode("licenses")
+                def license = licenses.appendNode("license")
+                license.appendNode("name", "MIT")
+                license.appendNode("url", "https://opensource.org/licenses/mit-license.php")
+
+                def developers = asNode().appendNode("developers")
+                def developer = developers.appendNode("developer")
+                developer.appendNode("name", "Billy Bichon")
+                developer.appendNode("email", "billy.bichon06@gmail.com")
+
+                def scm = asNode().appendNode("scm")
+                scm.appendNode("connection", "https://github.com/billybichon/rxLiveGQL")
+                scm.appendNode("developerConnection", "https://github.com/billybichon/rxLiveGQL")
+                scm.appendNode("url", "https://github.com/billybichon/rxLiveGQL")
+            }
         }
     }
+}
+
+bintray {
+    user = bintray_user
+    key = bintray_api_key
+
+    publications = ["MyPublication"]
+    publish = true
+    pkg {
+        repo = "Maven"
+        name = "rxLiveGQL"
+        desc = "ReactiveX java library in order to use GraphQL Subscription with RxJava2 on WebSocket based on Apollo Protocol."
+        websiteUrl = "https://github.com/billybichon/rxLiveGQL"
+        issueTrackerUrl = "https://github.com/billybichon/rxLiveGQL/issues"
+        vcsUrl = "https://github.com/billybichon/rxLiveGQL.git"
+        licenses = ["MIT"]
+        labels = ["java", "graphql", "websocket", "rxJava", "reactiveX", "programing"]
+        publicDownloadNumbers = true
+        userOrg = user
+        version {
+            name = '1.0'
+            desc = 'Initial version'
+            gpg {
+                sign = true
+                passphrase = bintray_gpg_passphrase
+            }
+        }
+    }
+}
+
+task wrapper(type: Wrapper) {
+    gradleVersion = '3.1'
 }
