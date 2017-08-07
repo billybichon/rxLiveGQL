@@ -1,15 +1,15 @@
 package com.github.billybichon.rxlivegql;
 
-import com.google.gson.Gson;
-import io.reactivex.*;
+import io.reactivex.BackpressureStrategy;
+import io.reactivex.Completable;
+import io.reactivex.Flowable;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
 
 /**
  * Created by billy on 23/07/2017.
+ * <p>
+ * ReactiveX implementation of a websocket communication with a GraphQL server.
  */
 public class RxLiveGQL {
 
@@ -26,88 +26,50 @@ public class RxLiveGQL {
     private static final String GQL_STOP = "stop";
 
     private WebSocketWrapper webSocketWrapper;
-    private CompletableEmitter initEmitter;
-    private HashMap<String, List<FlowableEmitter<String>>> subscriptionsMap = new HashMap<>();
-
-    public RxLiveGQL() {
-
-    }
 
     public interface Decoder<T> {
-        T onDecode(String json);
+        T decode(String json);
     }
-
 
     /**
      * Connect to GraphQL Apollo server.
+     * <p>
+     * The first onNext is fire when the connection is successful, onError will be launch if the connection is abnormally lost.
+     * <p>
+     * When the connection is normally close, onComplete is called.
      *
      * @param url The url of the GraphQL server
-     * @return A completable (onComplete when the connection is successful, onError otherwise)
+     * @return A Flowable
      */
-    public Completable connect(final String url) {
-        return Completable.create(emitter -> {
+    public Flowable<String> connect(final String url) {
+        return Flowable.create(emitter -> {
             webSocketWrapper = new WebSocketWrapper();
-            registerToAsync();
+            webSocketWrapper.getSubject().subscribe(msg -> {
+                switch (msg.type) {
+                    case "custom":
+                        switch (msg.id) {
+                            case "open":
+                                emitter.onNext("");
+                                break;
+                            case "close":
+                                if (msg.payload == null)
+                                    emitter.onComplete();
+                                else
+                                    emitter.onError(new Throwable(msg.payload.data.toString()));
+                                break;
+                            case "error":
+                                emitter.onError(new Throwable((msg.payload != null) ? msg.payload.data.toString() : "unknown error"));
+                                break;
+                        }
+                        break;
+                }
+            });
             try {
                 webSocketWrapper.connect(url);
-                emitter.onComplete();
             } catch (Exception e) {
                 emitter.onError(e.getCause());
             }
-        });
-    }
-
-    private void registerToAsync() {
-        webSocketWrapper.registerToAsync().subscribe(msg -> {
-                    switch (msg.type) {
-                        case GQL_CONNECTION_ACK:
-                            if (initEmitter != null)
-                                initEmitter.onComplete();
-                            break;
-                        case GQL_CONNECTION_ERROR:
-                            if (initEmitter != null)
-                                initEmitter.onError(new IOException(msg.payload.data.toString()));
-                            break;
-                        case GQL_DATA:
-                            if (subscriptionsMap.containsKey(msg.id)) {
-                                subscriptionsMap.get(msg.id).forEach(stringFlowableEmitter -> {
-                                    stringFlowableEmitter.onNext(msg.payload.data.toString());
-                                });
-                            }
-                            break;
-                        case "custom":
-                            switch (msg.id) {
-                                case "open":
-                                    // todo
-                                    break;
-                                case "close":
-                                    if (msg.payload == null)
-                                        sendCompleteToAllEmitter();
-                                    else
-                                        sendErrorToAllEmitter(new Throwable(msg.payload.data.toString()));
-                                    break;
-                                case "error":
-                                    // todo
-                                    break;
-                            }
-                            break;
-                    }
-                }, this::sendErrorToAllEmitter);
-    }
-
-    private void sendErrorToAllEmitter(Throwable throwable) {
-        subscriptionsMap.forEach((first, second) -> {
-            second.forEach(e -> {
-                e.onError(throwable);
-            });
-        });
-    }
-
-    private void sendCompleteToAllEmitter() {
-        initEmitter.onComplete();
-        subscriptionsMap.forEach((first, second) -> {
-            second.forEach(Emitter::onComplete);
-        });
+        }, BackpressureStrategy.BUFFER);
     }
 
     /**
@@ -117,12 +79,30 @@ public class RxLiveGQL {
      */
     public Completable initServer() {
         return Completable.create(emitter -> {
+            webSocketWrapper.getSubject().subscribe(msg -> {
+                switch (msg.type) {
+                    case GQL_CONNECTION_ACK:
+                        emitter.onComplete();
+                        break;
+                    case GQL_CONNECTION_ERROR:
+                        emitter.onError(new IOException(msg.payload.data.toString()));
+                        break;
+                    case GQL_ERROR:
+                        emitter.onError(new Throwable("please check that the server implements the Apollo protocol", new ApolloProtocolException("Unknown error")));
+                        break;
+                }
+            });
             MessageServer message = new MessageServer(null, null, GQL_CONNECTION_INIT);
             webSocketWrapper.sendMessage(message);
-            initEmitter = emitter;
         });
     }
 
+
+    /**
+     * Close the connection with the server.
+     *
+     * @return A completable which will indicate that the connection has been successfully closed (or not if a network error occurred)
+     */
     public Completable closeConnection() {
         return Completable.create(emitter -> {
             MessageServer message = new MessageServer(null, null, GQL_CONNECTION_TERMINATE);
@@ -132,26 +112,61 @@ public class RxLiveGQL {
         });
     }
 
+
+    /**
+     * Subscribe to an event base on the query
+     *
+     * @param query The query to subscribe
+     * @param tag   The tag associated with this query
+     * @return A flowable which will return a string each time the associated query respond.
+     */
     public Flowable<String> subscribe(String query, final String tag) {
         return Flowable.create(emitter -> {
+            webSocketWrapper.getSubject()
+                    .filter(messageClient -> messageClient.type.equals(GQL_DATA) && messageClient.id.equals(tag))
+                    .subscribe(msg -> {
+                        emitter.onNext(msg.payload.data.toString());
+                    });
             MessageServer message = new MessageServer(new PayloadServer(query, null, null), tag, GQL_START);
             webSocketWrapper.sendMessage(message);
-            if (subscriptionsMap.containsKey(tag))
-                subscriptionsMap.get(tag).add(emitter);
-            else {
-                List tmp = new ArrayList<FlowableEmitter<String>>();
-                tmp.add(emitter);
-                subscriptionsMap.put(tag, tmp);
-            }
         }, BackpressureStrategy.BUFFER);
     }
 
+    /**
+     * Subscribe to an event base on the query
+     *
+     * @param query     The query to subscribe
+     * @param tag       The tag associated with this query
+     * @param className The class name of the decoder object
+     * @param <T>       The object return by the query
+     * @param <U>       The object that can decode the T object
+     * @return A flowable which will return a object T each time the associated query respond.
+     */
+    // todo throws a class cast exception
+    public <T, U extends Decoder<T>> Flowable<T> subscribe(final String query, final String tag, final Class<U> className) {
+        return Flowable.create(emitter -> {
+            webSocketWrapper.getSubject()
+                    .filter(messageClient -> messageClient.type.equals(GQL_DATA) && messageClient.id.equals(tag))
+                    .subscribe(msg -> {
+                        U tmp = className.newInstance();
+                        T tmpDecoded = tmp.decode(msg.payload.data.toString());
+                        emitter.onNext(tmpDecoded);
+                    });
+            MessageServer message = new MessageServer(new PayloadServer(query, null, null), tag, GQL_START);
+            webSocketWrapper.sendMessage(message);
+        }, BackpressureStrategy.BUFFER);
+    }
+
+    /**
+     * Unsubscribe to a subscription by his tag
+     *
+     * @param tag The tag of the subscription
+     * @return A completable which will indicate that the subscription has been successfully unsubscribe (or not if a network error occurred)
+     */
     public Completable unsubscribe(String tag) {
         return Completable.create(emitter -> {
             MessageServer message = new MessageServer(null, tag, GQL_STOP);
             webSocketWrapper.sendMessage(message);
-            subscriptionsMap.get(tag).forEach(Emitter::onComplete);
-            subscriptionsMap.remove(tag);
             emitter.onComplete();
         });
     }

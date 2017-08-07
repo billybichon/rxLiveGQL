@@ -14,7 +14,7 @@ ReactiveX java library in order to use GraphQL Subscription with RxJava2 on WebS
 - [x] Subscribe/Unsubscribe which return Observables
 - [x] Close connection
 - [x] Error handling (partial)
-- [ ] Encoders / Decoders
+- [x] Encoders / Decoders (generic objects)
 
 ## Requirements ##
 
@@ -55,10 +55,12 @@ dependency {
 ```java
 RxLiveGQL rxliveGQL = new RxLiveGQL();
 
-rxLiveGQl.connect("ws://your.url").subscribe(() -> {
-  // successfully connect to the server
+rxLiveGQl.connect("ws://your.url").subscribe((str) -> {
+  // successfully connect to the server on the first next
 }, throwable -> {
   // an error occurred while connecting with the server
+}, () -> {
+  // on complete, the connection is successfully closed
 });
 ```
 
@@ -84,6 +86,23 @@ rxLiveGQL.subscribe("query to subscribe", "tag").subscribe(str -> {
 // Unsubscribe
 rxLiveGQL.unsubscribe("tag").subscribe(() -> {
   // successfully unsusbcribe
+}, throwable -> {
+  // some error occurred
+});
+```
+
+##### subscription with generic object #####
+```java
+// subscribe
+rxLiveGQL.subscribe("query to subscribe", "tag", Obj.Decoder.class).subscribe(obj -> {
+  // obj contains the data of the subscription transform into an object by the decoder
+}, throwable -> {
+  // some error occurred or the connection has been closed
+});
+
+// Unsubscribe
+rxLiveGQL.unsubscribe("tag").subscribe(() -> {
+  // successfully unsubscribe
 }, throwable -> {
   // some error occurred
 });
