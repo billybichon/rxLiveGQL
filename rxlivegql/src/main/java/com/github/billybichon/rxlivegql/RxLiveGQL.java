@@ -1,5 +1,6 @@
 package com.github.billybichon.rxlivegql;
 
+import com.google.gson.Gson;
 import io.reactivex.BackpressureStrategy;
 import io.reactivex.Completable;
 import io.reactivex.Flowable;
@@ -12,6 +13,8 @@ import java.io.IOException;
  * ReactiveX implementation of a websocket communication with a GraphQL server.
  */
 public class RxLiveGQL {
+    
+    private Gson gson = new Gson();
 
     // message type
     private static final String GQL_CONNECTION_INIT = "connection_init";
@@ -55,10 +58,10 @@ public class RxLiveGQL {
                                 if (msg.payload == null)
                                     emitter.onComplete();
                                 else
-                                    emitter.onError(new Throwable(msg.payload.data.toString()));
+                                    emitter.onError(new Throwable(gson.toJson(msg.payload.data)));
                                 break;
                             case "error":
-                                emitter.onError(new Throwable((msg.payload != null) ? msg.payload.data.toString() : "unknown error"));
+                                emitter.onError(new Throwable((msg.payload != null) ? gson.toJson(msg.payload.data) : "unknown error"));
                                 break;
                         }
                         break;
@@ -85,7 +88,7 @@ public class RxLiveGQL {
                         emitter.onComplete();
                         break;
                     case GQL_CONNECTION_ERROR:
-                        emitter.onError(new IOException(msg.payload.data.toString()));
+                        emitter.onError(new IOException(gson.toJson(msg.payload.data)));
                         break;
                     case GQL_ERROR:
                         emitter.onError(new Throwable("please check that the server implements the Apollo protocol", new ApolloProtocolException("Unknown error")));
@@ -125,7 +128,7 @@ public class RxLiveGQL {
             webSocketWrapper.getSubject()
                     .filter(messageClient -> messageClient.type.equals(GQL_DATA) && messageClient.id.equals(tag))
                     .subscribe(msg -> {
-                        emitter.onNext(msg.payload.data.toString());
+                        emitter.onNext(gson.toJson(msg.payload.data));
                     });
             MessageServer message = new MessageServer(new PayloadServer(query, null, null), tag, GQL_START);
             webSocketWrapper.sendMessage(message);
@@ -149,7 +152,7 @@ public class RxLiveGQL {
                     .filter(messageClient -> messageClient.type.equals(GQL_DATA) && messageClient.id.equals(tag))
                     .subscribe(msg -> {
                         U tmp = className.newInstance();
-                        T tmpDecoded = tmp.decode(msg.payload.data.toString());
+                        T tmpDecoded = tmp.decode(gson.toJson(msg.payload.data));
                         emitter.onNext(tmpDecoded);
                     });
             MessageServer message = new MessageServer(new PayloadServer(query, null, null), tag, GQL_START);
