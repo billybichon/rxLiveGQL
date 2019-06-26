@@ -108,6 +108,26 @@ rxLiveGQL.unsubscribe("tag").subscribe(() -> {
 });
 ```
 
+###### Decoder implementation example
+```java
+public class Feedback {
+    public String id;
+    public String text;
+    public Attachement attachement;
+    public static class Decoder implements com.github.billybichon.rxlivegql.RxLiveGQL.Decoder<Feedback> {
+        private Gson gson = new Gson();
+        @Override
+        public Feedback decode(String json) {
+            return gson.fromJson(json, Feedback.class);
+        }
+    }
+    public static class Attachement {
+        public String str1;
+        public String str2;
+    }
+}
+``` 
+
 ##### close connection #####
 ```java
 rxLiveGQL.closeConnection().subscribe(() -> {
